@@ -1,0 +1,13 @@
+# 微信群消息转发器依赖包
+# WeChat automation library
+wxautox>=3.0.0
+
+# Standard library dependencies (usually included with Python)
+# concurrent.futures - Python 3.2+
+# threading - Built-in
+# traceback - Built-in
+# time - Built-in
+# logging - Built-in
+# os - Built-in
+# sys - Built-in
+# datetime - Built-in
