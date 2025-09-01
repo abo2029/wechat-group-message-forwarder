@@ -39,7 +39,7 @@ flowchart TD
 """
 #########mermaid格式说明所有函数的调用关系说明结束#########
 
-from wxauto import WeChat  
+from wxauto import WeChat  # 这里就是wxautox库，不要改成wxauto
 import wxauto
 import traceback
 import time
