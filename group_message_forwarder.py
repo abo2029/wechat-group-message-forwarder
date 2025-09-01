@@ -1,24 +1,20 @@
-##############group_message_forwarder.py: [群消息转发器] ################
+##############group_message_forwarder.py: [群消息转发器 V2] ################
+# 变更记录: [2025-09-01 07:45] @abo2029 [V2版本：新增多群转发功能，支持同时监听多个群并转发到各自目标] ########
 # 变更记录: [2025-09-01 05:36] @abo2029 [移除图片大小限制] ########
-# 变更记录: [2025-09-01 05:33] @abo2029 [V3版本：移除视频转发功能，优化图片转发稳定性] ########
-# 变更记录: [2025-09-01 05:28] @abo2029 [V2版本：优化视频下载处理：增加重试机制和超时控制，改进错误处理] ########
-# 变更记录: [2025-06-30 00:25] @李祥光 [修复WindowsPath对象错误：在图片转发时将路径对象转换为字符串，解决SendFiles方法的类型错误]########
-# 变更记录: [2024-12-29 23:50] @李祥光 [移除错误的group属性判断：根据wxauto官方文档，消息类型无group属性，改为处理所有消息类型]########
-# 变更记录: [2024-12-29 23:45] @李祥光 [修复消息过滤逻辑：恢复群消息判断条件，确保只处理群消息]########
-# 变更记录: [2024-12-29 23:40] @李祥光 [修复图片消息转发：使用msg.download()正确下载临时文件，转发后自动清理]########
-# 变更记录: [2025-06-29 22:30] @李祥光 [新增图片消息转发功能：支持监听并转发图片类型消息到目标群列表]########
-# 变更记录: [2025-06-29 22:10] @李祥光 [修复wxautox API调用错误：使用ChatWith和SendMsg替代不存在的GetChat方法]########
-# 变更记录: [2025-06-29] @李祥光 [修复转发消息时的SendMsg方法调用错误：正确获取聊天窗口对象]########
-# 变更记录: [2025-01-20] @李祥光 [创建群消息转发功能：监听指定群的文字消息并转发到目标群列表]########
+# 变更记录: [2025-09-01 05:33] @abo2029 [优化图片转发稳定性] ########
+# 变更记录: [2025-06-30 00:25] @李祥光 [修复WindowsPath对象错误] ########
+# 变更记录: [2024-12-29 23:50] @李祥光 [移除错误的group属性判断] ########
+# 变更记录: [2024-12-29 23:45] @李祥光 [修复消息过滤逻辑] ########
+# 变更记录: [2024-12-29 23:40] @李祥光 [修复图片消息转发] ########
 
 ###########################文件下的所有函数###########################
 """
 log_info：记录正常信息日志到文件并以绿色打印到控制台
 log_error：记录错误日志到文件并以红色打印到控制台
-load_forward_config：从配置文件读取转发配置（源群和目标群列表）
+load_forward_config：从配置文件读取多群转发配置（多个源群和对应目标群列表）
 forward_message_to_groups：将消息转发到指定的目标群列表，支持文本和图片
 message_callback：处理接收到的消息，转发文字和图片类型消息
-main：主函数，初始化微信客户端并监听消息
+main：主函数，初始化微信客户端并监听多个群消息
 """
 ###########################文件下的所有函数###########################
 
@@ -27,19 +23,19 @@ main：主函数，初始化微信客户端并监听消息
 flowchart TD
     A[程序启动] --> B[main函数]
     B --> C[初始化微信实例]
-    C --> D[load_forward_config加载转发配置]
-    D --> E[设置消息监听]
+    C --> D[load_forward_config加载多群转发配置]
+    D --> E[为每个源群设置消息监听]
     E --> F[message_callback]
     F --> G{判断消息类型}
     G -->|文字消息| H[forward_message_to_groups文本转发]
     G -->|图片消息| I[forward_message_to_groups图片转发]
     G -->|其他消息| K[忽略消息]
-    H --> L[发送文本到目标群列表]
-    I --> M[发送图片到目标群列表]
+    H --> L[发送文本到对应目标群列表]
+    I --> M[发送图片到对应目标群列表]
 """
 #########mermaid格式说明所有函数的调用关系说明结束#########
 
-from wxauto import WeChat  # 这里就是wxautox库，不要改成wxauto
+from wxauto import WeChat
 import wxauto
 import traceback
 import time
@@ -80,47 +76,55 @@ def log_error(error_msg):
     logging.error(error_msg)
 
 def load_forward_config(config_file="forward_config.txt"):
-    """从配置文件读取转发配置"""
-    config = {
-        'source_group': None,
-        'target_groups': []
-    }
+    """从配置文件读取多群转发配置"""
+    config = {}
     
     try:
         if not os.path.exists(config_file):
             log_error(f"配置文件不存在: {config_file}")
             default_config = """# 群消息转发配置文件
-# 第一行：源群名称（要监听的群）
-# 后续行：目标群名称列表（要转发到的群，每行一个）
-# 以#开头的行为注释行
+# 格式说明：
+# 每个转发组用空行分隔
+# 每组第一行为源群名称
+# 后续行为该源群对应的目标群列表
+# 以#开头的行为注释
 
-# 源群（监听此群的消息）
-源群名称
+# 第一组转发配置
+测试群1
+目标群A
+目标群B
+目标群C
 
-# 目标群列表（转发到这些群）
-目标群1
-目标群2
-目标群3"""
+# 第二组转发配置
+测试群2
+目标群D
+目标群E"""
             with open(config_file, 'w', encoding='utf-8') as f:
                 f.write(default_config)
             log_info(f"已创建默认配置文件: {config_file}，请修改后重新运行程序")
             return config
         
         with open(config_file, 'r', encoding='utf-8') as f:
-            lines = [line.strip() for line in f.readlines() if line.strip() and not line.strip().startswith('#')]
+            content = f.read()
         
-        if not lines:
-            log_error("配置文件中没有找到有效的配置")
+        # 按空行分割不同的转发组
+        groups = [group.strip() for group in content.split('\n\n') if group.strip()]
+        
+        for group in groups:
+            lines = [line.strip() for line in group.split('\n') 
+                    if line.strip() and not line.strip().startswith('#')]
+            if lines:
+                source_group = lines[0]
+                target_groups = lines[1:]
+                if target_groups:  # 只添加有目标群的配置
+                    config[source_group] = target_groups
+                    log_info(f"加载转发配置 - 源群: {source_group}, 目标群: {target_groups}")
+        
+        if not config:
+            log_error("配置文件中没有找到有效的转发配置")
             return config
         
-        config['source_group'] = lines[0]
-        if len(lines) > 1:
-            config['target_groups'] = lines[1:]
-            log_info(f"目标群列表: {config['target_groups']}")
-        else:
-            log_error("配置文件中没有找到目标群")
-        
-        log_info(f"成功读取转发配置: 源群={config['source_group']}, 目标群数量={len(config['target_groups'])}")
+        log_info(f"成功读取所有转发配置，共 {len(config)} 个源群")
         return config
         
     except Exception as e:
@@ -219,7 +223,7 @@ def forward_message_to_groups(wx, message_content, sender_name, target_groups, m
                     continue
                     
                 success_count += 1
-                time.sleep(0.5)
+                time.sleep(0.5)  # 添加短暂延迟避免消息发送过快
             except Exception as e:
                 log_error(f"转发消息到群 {target_group} 失败: {str(e)}")
         
@@ -269,10 +273,12 @@ def message_callback(msg, chat, wx, target_groups):
 def main():
     """主程序入口"""
     try:
-        log_info("=== 微信群消息转发程序启动 ===")
+        log_info("=== 微信群消息转发器 V2 启动 ===")
+        log_info("支持多群监听和分发功能")
         
-        config = load_forward_config()
-        if not config['source_group'] or not config['target_groups']:
+        # 加载配置
+        forward_config = load_forward_config()
+        if not forward_config:
             log_error("转发配置无效，请检查配置文件")
             return
         
@@ -285,29 +291,31 @@ def main():
             log_error(f"微信实例初始化失败: {str(e)}")
             log_error("请确保：1. 微信已登录 2. 微信客户端正常运行")
             return
-            
-        source_group = config['source_group']
-        target_groups = config['target_groups']
         
-        try:
-            if not hasattr(wx, 'AddListenChat'):
-                raise Exception("微信实例无效，缺少AddListenChat方法")
+        # 为每个源群添加监听
+        for source_group, target_groups in forward_config.items():
+            try:
+                if not hasattr(wx, 'AddListenChat'):
+                    raise Exception("微信实例无效，缺少AddListenChat方法")
 
-            def callback_with_params(msg, chat):
-                message_callback(msg, chat, wx, target_groups)
+                def create_callback(target_groups):
+                    def callback_with_params(msg, chat):
+                        message_callback(msg, chat, wx, target_groups)
+                    return callback_with_params
 
-            wx.AddListenChat(nickname=source_group, callback=callback_with_params)
-            log_info(f"已添加监听源群: {source_group}")
-            log_info(f"将转发到 {len(target_groups)} 个目标群: {', '.join(target_groups)}")
+                wx.AddListenChat(nickname=source_group, 
+                               callback=create_callback(target_groups))
+                log_info(f"已添加监听源群: {source_group} -> {len(target_groups)}个目标群")
 
-        except Exception as e:
-            log_error(f"添加监听失败 {source_group}: {str(e)}")
-            if "NoneType" in str(e) or "NativeWindowHandle" in str(e):
-                log_error("检测到微信实例异常，建议重启程序")
-            return
+            except Exception as e:
+                log_error(f"添加监听失败 {source_group}: {str(e)}")
+                if "NoneType" in str(e) or "NativeWindowHandle" in str(e):
+                    log_error("检测到微信实例异常，建议重启程序")
+                continue
         
+        log_info(f"成功配置 {len(forward_config)} 个源群的监听")
         log_info("开始监听群消息并自动转发...")
-        log_info("程序正在运行中，按 Ctrl+C 停止程序")
+        log_info("程序运行中，按 Ctrl+C 停止程序")
         
         if wx is not None and hasattr(wx, 'KeepRunning'):
             wx.KeepRunning()
@@ -320,7 +328,7 @@ def main():
     except Exception as e:
         log_error(f"程序运行出错: {str(e)}\n{traceback.format_exc()}")
     finally:
-        log_info("=== 微信群消息转发程序结束 ===")
+        log_info("=== 微信群消息转发器 V2 结束 ===")
 
 if __name__ == "__main__":
     main()
