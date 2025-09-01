@@ -146,9 +146,13 @@ def forward_message_to_groups(wx, message_content, sender_name, target_groups, m
     """
     forward_message_to_groups 功能说明:
     # 将消息转发到指定的目标群列表，支持文本、图片和视频消息
-    # 输入: wx(微信实例), message_content(str) - 消息内容或文件路径, sender_name(str) - 发送者名称, target_groups(list) - 目标群列表, message_type(str) - 消息类型 | 输出: None
+    # 新增：在转发消息中添加发送者和发送时间信息
+    # 输入: wx(微信实例), message_content(str) - 消息内容或文件路径, sender_name(str) - 发送者名称, target_groups(list) - 目标群列表, message_type(str) - 消息类型 | 输出[...]
     """
     try:
+        # 获取当前时间
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
         success_count = 0
         for target_group in target_groups:
             try:
@@ -157,12 +161,16 @@ def forward_message_to_groups(wx, message_content, sender_name, target_groups, m
                 
                 # 根据消息类型发送不同内容
                 if message_type == 'text':
-                    # 发送文本消息
-                    wx.SendMsg(message_content)
+                    # 添加发送者和时间信息到文本消息
+                    formatted_message = f"[转发消息]\n发送人：{sender_name}\n发送时间：{current_time}\n\n{message_content}"
+                    wx.SendMsg(formatted_message)
                     log_info(f"文本消息已转发到群: {target_group}")
                 elif message_type == 'image':
+                    # 首先发送图片信息说明
+                    info_message = f"[转发图片]\n发送人：{sender_name}\n发送时间：{current_time}"
+                    wx.SendMsg(info_message)
+                    
                     # 发送图片消息
-                    # 确保路径是字符串格式（处理 WindowsPath 对象）
                     file_path = str(message_content)
                     if os.path.exists(file_path):
                         wx.SendFiles(file_path)
@@ -171,8 +179,11 @@ def forward_message_to_groups(wx, message_content, sender_name, target_groups, m
                         log_error(f"图片文件不存在: {file_path}")
                         continue
                 elif message_type == 'video':
+                    # 首先发送视频信息说明
+                    info_message = f"[转发视频]\n发送人：{sender_name}\n发送时间：{current_time}"
+                    wx.SendMsg(info_message)
+                    
                     # 发送视频消息
-                    # 确保路径是字符串格式（处理 WindowsPath 对象）
                     file_path = str(message_content)
                     if os.path.exists(file_path):
                         wx.SendFiles(file_path)
